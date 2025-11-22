@@ -1,7 +1,11 @@
-// Dashboard Tomates (EDA) — versión U6 simplificada
+// Dashboard Tomates (EDA) — versión U6 con estimadores de varianza
 // Usa Chart.js + Bootstrap y carga CSV local.
 
 const LS_THEME = "tomates_theme";
+
+// Paleta "tomate" suave para barras / histogramas
+const TOMATO_FILL = "rgba(220, 53, 69, 0.45)";
+const TOMATO_BORDER = "rgba(220, 53, 69, 0.9)";
 
 // ---- Chart Instances ----
 let chTurno, chCalidad, chProv, chDefecto;
@@ -17,11 +21,6 @@ function applyTheme(theme) {
   Chart.defaults.color = textColor;
   Chart.defaults.borderColor = gridColor;
 }
-
-// Paleta "tomate" suave
-const TOMATO_FILL = "rgba(220, 53, 69, 0.45)";   // rojo leve/translúcido
-const TOMATO_BORDER = "rgba(220, 53, 69, 0.9)";  // borde rojo un poco más fuerte
-
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -58,6 +57,9 @@ function countBy(rows, key) {
 }
 
 function histogram(values, bins = 10) {
+  if (!values.length) {
+    return { labels: [], counts: [] };
+  }
   const min = Math.min(...values);
   const max = Math.max(...values);
   const width = (max - min) / bins || 1;
@@ -107,36 +109,46 @@ function download(name, text) {
   URL.revokeObjectURL(a.href);
 }
 
-// ---------- Builders ----------
-function buildBar(canvasId, map, title) {
-	const labels = Object.keys(map);
-	const data = labels.map((k) => map[k]);
-	const ctx = $(canvasId);
-
-	return new Chart(ctx, {
-		type: "bar",
-		data: {
-			labels,
-			datasets: [
-				{
-					label: title,
-					data,
-					borderWidth: 1,
-					backgroundColor: TOMATO_FILL,
-					borderColor: TOMATO_BORDER,
-				},
-			],
-		},
-		options: {
-			responsive: true,
-			maintainAspectRatio: false,
-			animation: false,
-			plugins: { legend: { display: false } },
-			scales: { y: { beginAtZero: true } },
-		},
-	});
+// Media y varianza muestral (divisor n-1)
+function meanAndVar(values) {
+  const n = values.length;
+  if (!n) return { mean: NaN, variance: NaN };
+  const mean = values.reduce((a,b)=>a+b,0) / n;
+  if (n === 1) return { mean, variance: 0 };
+  let sumSq = 0;
+  for (const v of values) {
+    sumSq += (v - mean) ** 2;
+  }
+  const variance = sumSq / (n - 1);
+  return { mean, variance };
 }
 
+// ---------- Builders ----------
+function buildBar(canvasId, map, title) {
+  const labels = Object.keys(map);
+  const data = labels.map(k => map[k]);
+  const ctx = $(canvasId);
+  return new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [{
+        label: title,
+        data,
+        borderWidth: 1,
+        backgroundColor: TOMATO_FILL,
+        borderColor: TOMATO_BORDER
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true } }
+    }
+  });
+}
 
 function buildPie(canvasId, map) {
   const labels = Object.keys(map);
@@ -149,32 +161,26 @@ function buildPie(canvasId, map) {
 }
 
 function buildHist(canvasId, values, title) {
-	const { labels, counts } = histogram(values, 10);
-
-	return new Chart($(canvasId), {
-		type: "bar",
-		data: {
-			labels,
-			datasets: [
-				{
-					label: title,
-					data: counts,
-					borderWidth: 1,
-					backgroundColor: TOMATO_FILL,
-					borderColor: TOMATO_BORDER,
-				},
-			],
-		},
-		options: {
-			responsive: true,
-			maintainAspectRatio: false,
-			animation: false,
-			scales: { y: { beginAtZero: true } },
-			plugins: { legend: { display: false } },
-		},
-	});
+  const { labels, counts } = histogram(values, 10);
+  return new Chart($(canvasId), {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [{
+        label: title,
+        data: counts,
+        borderWidth: 1,
+        backgroundColor: TOMATO_FILL,
+        borderColor: TOMATO_BORDER
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      scales: { y: { beginAtZero: true } },
+      plugins: { legend: { display: false } }
+    }
+  });
 }
-
 
 function buildScatter(canvasId, xs, ys) {
   const pts = xs.map((x,i)=>({x, y: ys[i]}));
@@ -236,18 +242,32 @@ function fillTable(rows) {
 }
 
 function updateSummary(rows) {
-  $("#cardN").textContent = rows.length;
+  const n = rows.length;
+  $("#cardN").textContent = n;
   const def = rows.filter(r=>r.defecto==="Sí").length;
-  $("#cardDefPct").textContent = rows.length ? ((def/rows.length)*100).toFixed(1)+"%" : "–";
-  const pesoMean = rows.length ? rows.reduce((a,r)=>a+r.peso_g,0)/rows.length : NaN;
-  const diaMean  = rows.length ? rows.reduce((a,r)=>a+r.diametro_mm,0)/rows.length : NaN;
-  $("#cardPesoMean").textContent = rows.length ? pesoMean.toFixed(1) : "–";
-  $("#cardDiaMean").textContent  = rows.length ? diaMean.toFixed(1) : "–";
+  $("#cardDefPct").textContent = n ? ((def/n)*100).toFixed(1)+"%" : "–";
+
+  const pesos = rows.map(r=>r.peso_g);
+  const dias  = rows.map(r=>r.diametro_mm);
+
+  const { mean: meanPeso, variance: varPeso } = meanAndVar(pesos);
+  const { mean: meanDia,  variance: varDia }  = meanAndVar(dias);
+
+  $("#cardPesoMean").textContent = n ? meanPeso.toFixed(2) : "–";
+  $("#cardPesoVar").textContent  = n ? varPeso.toFixed(2)  : "–";
+  $("#cardDiaMean").textContent  = n ? meanDia.toFixed(2)  : "–";
+  $("#cardDiaVar").textContent   = n ? varDia.toFixed(2)   : "–";
 }
 
 function render() {
   const rows = getFilteredRows();
   destroyCharts();
+
+  if (!rows.length) {
+    updateSummary([]);
+    fillTable([]);
+    return;
+  }
 
   updateSummary(rows);
 
