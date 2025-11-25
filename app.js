@@ -161,26 +161,41 @@ function buildPie(canvasId, map) {
 }
 
 function buildHist(canvasId, values, title) {
-  const { labels, counts } = histogram(values, 10);
-  return new Chart($(canvasId), {
-    type: "bar",
-    data: {
-      labels,
-      datasets: [{
-        label: title,
-        data: counts,
-        borderWidth: 1,
-        backgroundColor: TOMATO_FILL,
-        borderColor: TOMATO_BORDER
-      }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false, animation: false,
-      scales: { y: { beginAtZero: true } },
-      plugins: { legend: { display: false } }
-    }
-  });
+	const { labels, counts } = histogram(values, 10);
+	return new Chart($(canvasId), {
+		type: "bar",
+		data: {
+			labels,
+			datasets: [
+				{
+					label: title,
+					data: counts,
+					borderWidth: 1,
+					backgroundColor: TOMATO_FILL,
+					borderColor: TOMATO_BORDER,
+
+					// 👉 Hace que las barras queden pegadas entre sí
+					categoryPercentage: 1.0,
+					barPercentage: 1.0,
+				},
+			],
+		},
+		options: {
+			responsive: true,
+			maintainAspectRatio: false,
+			animation: false,
+			scales: {
+				y: { beginAtZero: true },
+				x: {
+					// opcional, por si querés asegurarte de que ocupe todo el ancho
+					stacked: false,
+				},
+			},
+			plugins: { legend: { display: false } },
+		},
+	});
 }
+
 
 function buildScatter(canvasId, xs, ys) {
   const pts = xs.map((x,i)=>({x, y: ys[i]}));
